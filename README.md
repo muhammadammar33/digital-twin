@@ -5,8 +5,8 @@ Cardiac Disease Recognition* (Appl. Sci. 2026): the accurate ECG classifier back
 (xresnet1d101 + cross-lead attention → 512-d embedding → 5 superclass logits) on PTB-XL.
 Target: test-fold macro-AUC ≈ 0.928 (Strodthoff et al. baseline).
 
-> Status: milestones 1–4 done (data prep, Dataset/normalisation, model, training loop). Next:
-> full evaluation + B0 baseline reproduction (5). Scope: **Stream 1 only** (no interpretation layer yet).
+> Status: milestones 1–5 built (data prep, Dataset/normalisation, model, training loop, test-fold
+> evaluation). The harness is validated; the B0 baseline itself is still to be run on a GPU. Scope: **Stream 1 only** (no interpretation layer yet).
 
 Goal: reproduce the baseline first (reference line), then **beat** it (macro-F1 0.754 / macro-AUC
 0.928) with raw-waveform-only improvements, each one a config toggle recorded as its own row in
@@ -189,6 +189,39 @@ mkdir -p runs && cp -r /kaggle/input/<previous-output>/digital-twin/runs/b0 runs
 Use "Save Version → Save & Run All" so the run keeps going after you close the tab and `runs/b0`
 is kept as notebook output.
 
+## 5. Evaluate on the test fold
+
+```bash
+python scripts/evaluate.py --run-name b0 --row B0
+```
+
+Protocol:
+1. **Thresholds are chosen on the validation fold and frozen.** The thresholds selected on validation
+   at training time (stored in `best.pt`) are written to `eval_best/thresholds.json` before the test
+   fold is predicted. They are re-derived on validation only as a consistency check. Nothing is ever
+   tuned on test, and an assertion enforces this.
+2. The test fold is predicted once. The script reports macro-AUC, macro-F1 with the frozen thresholds
+   (and at 0.5, for reference only), per-class AUC/F1/sensitivity/specificity/precision, and
+   one-vs-rest confusion matrices per class.
+3. **95% bootstrap CIs** (B = 1000, fixed seed, `eval.bootstrap`): test records are resampled with
+   replacement and the thresholds stay fixed. The CIs therefore cover test-sampling variance of this
+   one classifier, not run-to-run (seed) variance. Multi-seed rows add that separately.
+4. A comparison with the targets in `eval.targets` (macro-AUC 0.928, macro-F1 0.751 [0.740–0.767]).
+5. The `--row` id is written or updated in `benchmarks.md` as `value [95% CI]` for macro-F1,
+   macro-AUC and HYP-F1, with the run, epoch and date in the notes.
+
+Outputs go to `runs/<name>/eval_best/`: `report.md`, `metrics.json`, `thresholds.json` and
+`predictions.npz`. The npz holds val/test probabilities, which is what ensembling will average later.
+Evaluate SWA weights with `--checkpoint swa`. A new improvement row: `--row A1 --vs B0`.
+`--plumbing-check` labels the report as a harness check and writes the row only to a scratch copy
+inside the run folder, never to `benchmarks.md`.
+
+On Kaggle, run it right after training (it needs the cache built by `prepare_data.py`):
+
+```bash
+python scripts/train.py --run-name b0 && python scripts/evaluate.py --run-name b0 --row B0
+```
+
 ## Accuracy roadmap: where each lever plugs in
 
 Defaults are the baseline. Every lever is off by default and is enabled from the config.
@@ -217,7 +250,7 @@ configs/        YAML configs (all experiment settings)
 src/data/       label mapping, splits, signal cache, Dataset, normalisation, crops/windows, augmentation registry
 src/models/     xresnet1d101 backbone, cross-lead attention, head
 src/train/      training loop, losses, optimiser/schedule, EMA/SWA
-src/eval/       metrics, threshold search, confusion matrices
+src/eval/       metrics, val-threshold search, bootstrap CIs, confusion matrices, predictor, benchmarks writer
 scripts/        download_data.py, prepare_data.py, check_data.py, check_model.py, train.py, evaluate.py
 benchmarks.md   running results table (one change per row)
 ```

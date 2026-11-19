@@ -79,6 +79,13 @@ train:
   limit_eval_batches: null   # debugging only
 
 eval:
+  targets:                   # Narigina et al. 2026 Stream 1 (reporting only; never used for selection)
+    macro_auc: 0.928
+    macro_f1: 0.751
+    macro_f1_ci: [0.740, 0.767]
+  bootstrap:
+    n_boot: 1000
+    seed: 0
   window_agg:                # overlapping-window aggregation at eval time
     enabled: auto            # auto = on iff data.input.mode == random_crop | true | false
     window_seconds: 2.5
