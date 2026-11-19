@@ -30,6 +30,22 @@ data:
     type: none               # none | hyp_oversample
     factor: 2.0              # HYP-positive records drawn this many times as often
 
+model:
+  backbone:
+    name: xresnet1d101       # xresnet1d18|34|50|101|152 (registry in src/models/backbone.py)
+    widths: [64, 128, 256, 512]
+    kernel_size: 5           # Strodthoff default for 1-D xresnet
+    kernel_size_stem: 5
+  attention:
+    type: none               # none (B0 baseline) | lead (cross-lead, pre-backbone) | temporal (post-backbone)
+    lead: {d_model: 32, heads: 4, kernel_size: 7, dropout: 0.0}
+    temporal: {d_model: 256, heads: 8, dropout: 0.1}
+  pooling: avg               # avg (paper) | max | concat (avg+max, fastai head)
+  embed_dim: 512             # the embedding exposed to later interpretation layers
+  proj_dropout: 0.0
+  head_dropout: 0.5
+  init_from: null            # path to pretrained backbone weights (self-supervised pretraining seam)
+
 train:
   batch_size: 64
 

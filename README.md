@@ -5,7 +5,7 @@ Cardiac Disease Recognition* (Appl. Sci. 2026): the accurate ECG classifier back
 (xresnet1d101 + cross-lead attention → 512-d embedding → 5 superclass logits) on PTB-XL.
 Target: test-fold macro-AUC ≈ 0.928 (Strodthoff et al. baseline).
 
-> Status: milestones 1–2 done (data prep + Dataset/normalisation). Next: model (3), training (4),
+> Status: milestones 1–3 done (data prep, Dataset/normalisation, model). Next: training (4),
 > evaluation + baseline reproduction (5). Scope: **Stream 1 only** (no interpretation layer yet).
 
 Goal: reproduce the baseline first (reference line), then **beat** it (macro-F1 0.754 / macro-AUC
@@ -91,20 +91,40 @@ and applies them unchanged to val/test as `(x - mean) / (std + eps)`. Then check
 (`x [64, 12, 1000]`, `y [64, 5]`), the flat-lead record, the 2.5 s crop fallback, the windowing helper,
 seed reproducibility and the HYP oversampler.
 
+## 3. Check the model
+
+```bash
+python scripts/check_model.py
+```
+
+B0 is the **pure xresnet1d101** (port of Strodthoff's `xresnet1d.py`: bottleneck blocks (3, 4, 23, 3),
+widths (64, 128, 256, 512) ×4 expansion → 2048 channels, kernel 5) → average pooling → 512-d
+projection (Linear-BN-ReLU) → dropout + Linear → 5 logits. 34.07 M parameters (33.02 M backbone).
+
+`model(x)` returns `StreamOutput(logits [B,5], embedding [B,512])`. The embedding is the only path to
+the logits (`model.head(model.encoder(x))`). `model.freeze_encoder()` freezes the whole encoder,
+BatchNorm statistics included, for a later layer trained on the embedding.
+
+Attention is a toggle (`model.attention.type`): `none` (B0), `lead` (cross-lead multi-head attention
+over the 12 lead tokens at each time step, before the backbone), `temporal` (self-attention over the
+backbone's time steps). Both are residual with a zero-initialised gate, so they start exactly equal to
+B0. To add a variant, register a module in `src/models/attention.py`.
+
 ## Accuracy roadmap: where each lever plugs in
 
 Defaults are the baseline. Every lever is off by default and is enabled from the config.
 
 | Lever | Config key | Code | Status |
 |---|---|---|---|
+| Cross-lead / temporal attention | `model.attention.type` | `src/models/attention.py` | done (M3); first benchmark row vs B0 |
 | 2.5 s random crops (Strodthoff fallback) | `data.input.mode: random_crop` | `src/data/windows.py` | done (M2) |
 | Overlapping-window aggregation at eval | `eval.window_agg` | `src/data/windows.py` → predictor | helper done; wired in M5 |
 | Train-time augmentation / TTA | `data.augment`, `eval.tta` | `src/data/augment.py` registry | seam only (empty) |
 | HYP oversampling | `data.sampler.type: hyp_oversample` | `src/data/dataset.py` | done (M2) |
 | Asymmetric + focal loss | `train.loss` | `src/train/loss.py` | M4 |
 | EMA / SWA | `train.ema`, `train.swa` | `src/train/` | M4 |
-| Multi-seed / multi-architecture ensembles | `ensemble` (list of run dirs) | `scripts/evaluate.py` averages saved probabilities | after M5 |
-| Self-supervised pretraining (masked / contrastive) | `model.init_from` (backbone checkpoint) | separate pretrain script → loads backbone weights | after M5 |
+| Multi-seed / multi-architecture ensembles | `ensemble` (list of run dirs); `model.backbone.name` (xresnet1d18…152) | `scripts/evaluate.py` averages saved probabilities | after M5 |
+| Self-supervised pretraining (masked / contrastive) | `model.init_from` (backbone checkpoint) | loader done (`load_encoder_weights`); pretrain script after M5 | seam ready |
 | 500 Hz input | `data.sampling_rate: 500` | everywhere | supported |
 
 **Interpretation-layer boundary (kept clean, not built):** the model returns `(logits [B,5],
@@ -119,6 +139,6 @@ src/data/       label mapping, splits, signal cache, Dataset, normalisation, cro
 src/models/     xresnet1d101 backbone, cross-lead attention, head
 src/train/      training loop, losses, optimiser/schedule, EMA/SWA
 src/eval/       metrics, threshold search, confusion matrices
-scripts/        download_data.py, prepare_data.py, check_data.py, train.py, evaluate.py
+scripts/        download_data.py, prepare_data.py, check_data.py, check_model.py, train.py, evaluate.py
 benchmarks.md   running results table (one change per row)
 ```

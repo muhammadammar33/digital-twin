@@ -12,4 +12,6 @@ Reference targets (Narigina et al. 2026): macro-F1 **0.754**, macro-AUC **0.928*
 | # | config (file + overrides) | vs | macro-F1 | macro-AUC | HYP-F1 | notes |
 |---|---|---|---|---|---|---|
 | ref | Narigina et al. 2026, Stream 1 (reported) | | 0.754 | 0.928 | | paper numbers, not run here |
-| B0 | `configs/default.yaml` (10 s, 100 Hz, BCE) | | | | | baseline reproduction (Milestone 5) |
+| B0 | `configs/default.yaml`: pure xresnet1d101, 10 s, 100 Hz, BCE, avg-pool → 512 → 5 | | | | | baseline reproduction (Milestone 5); 34.07 M params |
+| A1 | B0 + `model.attention.type=lead` (cross-lead MHA on input, zero-gated) | B0 | | | | first improvement row; +4,962 params |
+| A1b | B0 + `model.attention.type=temporal` (self-attention over T/32 tokens, zero-gated) | B0 | | | | alternative reading of the paper's attention; +1.31 M params |
