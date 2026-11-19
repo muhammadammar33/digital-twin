@@ -4,7 +4,7 @@
 seed: 42
 
 data:
-  root: null                 # REQUIRED: folder containing ptbxl_database.csv, scp_statements.csv, records100/, records500/
+  root: data/ptb-xl          # PTB-XL folder (ptbxl_database.csv, scp_statements.csv, records100/, records500/); relative = repo root
   cache_dir: artifacts/cache # derived tables / signal cache (relative to repo root unless absolute)
   sampling_rate: 100         # 100 -> 12 x 1000, 500 -> 12 x 5000
   task: superdiagnostic

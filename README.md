@@ -8,27 +8,67 @@ Target: test-fold macro-AUC ≈ 0.928 (Strodthoff et al. baseline).
 > Status: milestone 1 (data preparation + sanity checks). Later milestones add the Dataset,
 > model, training loop and evaluation.
 
-## Setup
+## Setup (any machine: Linux, macOS, Windows)
+
+Everything except the dataset and generated caches is in this repo. Starting from a fresh clone:
 
 ```bash
-pip install -r requirements.txt          # for CPU-only torch: pip install torch --index-url https://download.pytorch.org/whl/cpu
+git clone https://github.com/muhammadammar33/digital-twin.git
 ```
-
-Get PTB-XL v1.0.3 from PhysioNet (≈1.8 GB zip, public):
 
 ```bash
-curl -L -o ptb-xl-1.0.3.zip https://physionet.org/content/ptb-xl/get-zip/1.0.3/ && unzip ptb-xl-1.0.3.zip
+cd digital-twin
 ```
 
-The dataset path is never hard-coded; pass it with `--set data.root=...` (or edit `configs/default.yaml`).
+```bash
+python -m venv .venv
+```
+
+Activate it (`source .venv/bin/activate` on Linux/macOS, `.venv\Scripts\activate` on Windows), then
+install PyTorch for your hardware first (pick the command at https://pytorch.org/get-started/locally/,
+e.g. a CUDA build if you have an NVIDIA GPU), then the rest:
+
+```bash
+pip install -r requirements.txt
+```
+
+Download PTB-XL v1.0.3 (≈1.8 GB zip → 3.2 GB, public, CC BY 4.0) into `data/ptb-xl/`, checksum-verified:
+
+```bash
+python scripts/download_data.py
+```
+
+Already have PTB-XL somewhere? Skip the download and pass its folder instead:
+`--set data.root=/path/to/ptb-xl` on any script (or edit `data.root` in `configs/default.yaml`).
+
+Tested with Python 3.13, torch 2.15, numpy 2.5, pandas 3.0, scikit-learn 1.9, wfdb 4.3
+(Python ≥ 3.10 required).
+
+### What is (and isn't) in git
+
+| Path | In git? | How to recreate |
+|---|---|---|
+| code, configs, README, requirements | yes | n/a |
+| `data/ptb-xl/` (raw dataset, 3.2 GB) | no | `python scripts/download_data.py` |
+| `artifacts/cache/` (label table + signal cache, 1–5 GB) | no | `python scripts/prepare_data.py` |
+| `runs/` (checkpoints, logs) | no | produced by training |
+
+Label table and splits are deterministic, so the cache rebuilt on your machine is identical to the one here.
 
 ## 1. Prepare data (labels, splits, signal cache, sanity checks)
 
 ```bash
-python scripts/prepare_data.py --config configs/default.yaml --set data.root=/path/to/ptb-xl-...-1.0.3
+python scripts/prepare_data.py
 ```
 
-For 500 Hz, add `data.sampling_rate=500` (builds a separate ~5 GB memory-mapped cache).
+For 500 Hz (builds a separate ~5 GB memory-mapped cache):
+
+```bash
+python scripts/prepare_data.py --set data.sampling_rate=500
+```
+
+Expected result (100 Hz): 21,388 records kept (411 without a superclass dropped);
+train/val/test = 17,084 / 2,146 / 2,158; 0 patients shared between splits; `ALL CHECKS PASSED`.
 
 **Label protocol** (same as Strodthoff's `ecg_ptbxl_benchmarking`): each SCP code with
 `diagnostic == 1` in `scp_statements.csv` contributes its `diagnostic_class`. Likelihood values

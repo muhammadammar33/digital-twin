@@ -5,3 +5,4 @@ runs/
 *.npy
 *.pt
 .venv/
+data/
