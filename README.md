@@ -5,8 +5,12 @@ Cardiac Disease Recognition* (Appl. Sci. 2026): the accurate ECG classifier back
 (xresnet1d101 + cross-lead attention → 512-d embedding → 5 superclass logits) on PTB-XL.
 Target: test-fold macro-AUC ≈ 0.928 (Strodthoff et al. baseline).
 
-> Status: milestone 1 (data preparation + sanity checks). Later milestones add the Dataset,
-> model, training loop and evaluation.
+> Status: milestones 1–2 done (data prep + Dataset/normalisation). Next: model (3), training (4),
+> evaluation + baseline reproduction (5). Scope: **Stream 1 only** (no interpretation layer yet).
+
+Goal: reproduce the baseline first (reference line), then **beat** it (macro-F1 0.754 / macro-AUC
+0.928) with raw-waveform-only improvements, each one a config toggle recorded as its own row in
+[`benchmarks.md`](benchmarks.md).
 
 ## Setup (any machine: Linux, macOS, Windows)
 
@@ -76,13 +80,45 @@ are ignored. Records with no superclass are dropped (`data.drop_unlabeled: true`
 Splits: `strat_fold` 1–8 train, 9 validation, 10 test. The folds are already split by patient,
 and the script checks that no patient appears in more than one split.
 
+## 2. Check the Dataset / normalisation
+
+```bash
+python scripts/check_data.py
+```
+
+Computes per-lead mean/std on the **train folds only** (cached in `artifacts/cache/norm_stats_<fs>hz.json`)
+and applies them unchanged to val/test as `(x - mean) / (std + eps)`. Then checks one batch per split
+(`x [64, 12, 1000]`, `y [64, 5]`), the flat-lead record, the 2.5 s crop fallback, the windowing helper,
+seed reproducibility and the HYP oversampler.
+
+## Accuracy roadmap: where each lever plugs in
+
+Defaults are the baseline. Every lever is off by default and is enabled from the config.
+
+| Lever | Config key | Code | Status |
+|---|---|---|---|
+| 2.5 s random crops (Strodthoff fallback) | `data.input.mode: random_crop` | `src/data/windows.py` | done (M2) |
+| Overlapping-window aggregation at eval | `eval.window_agg` | `src/data/windows.py` → predictor | helper done; wired in M5 |
+| Train-time augmentation / TTA | `data.augment`, `eval.tta` | `src/data/augment.py` registry | seam only (empty) |
+| HYP oversampling | `data.sampler.type: hyp_oversample` | `src/data/dataset.py` | done (M2) |
+| Asymmetric + focal loss | `train.loss` | `src/train/loss.py` | M4 |
+| EMA / SWA | `train.ema`, `train.swa` | `src/train/` | M4 |
+| Multi-seed / multi-architecture ensembles | `ensemble` (list of run dirs) | `scripts/evaluate.py` averages saved probabilities | after M5 |
+| Self-supervised pretraining (masked / contrastive) | `model.init_from` (backbone checkpoint) | separate pretrain script → loads backbone weights | after M5 |
+| 500 Hz input | `data.sampling_rate: 500` | everywhere | supported |
+
+**Interpretation-layer boundary (kept clean, not built):** the model returns `(logits [B,5],
+embedding [B,512])`. A later stage can attach to the 512-d embedding with the backbone frozen, so
+the backbone is never retrained.
+
 ## Repo layout
 
 ```
 configs/        YAML configs (all experiment settings)
-src/data/       label mapping, splits, signal cache, Dataset + normalisation
+src/data/       label mapping, splits, signal cache, Dataset, normalisation, crops/windows, augmentation registry
 src/models/     xresnet1d101 backbone, cross-lead attention, head
 src/train/      training loop, losses, optimiser/schedule, EMA/SWA
 src/eval/       metrics, threshold search, confusion matrices
-scripts/        prepare_data.py, train.py, evaluate.py
+scripts/        download_data.py, prepare_data.py, check_data.py, train.py, evaluate.py
+benchmarks.md   running results table (one change per row)
 ```

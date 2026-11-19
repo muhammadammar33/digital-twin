@@ -1,5 +1,6 @@
 # Stream 1 backbone (xresnet1d101 + cross-lead attention) on PTB-XL superdiagnostic.
 # Override any key from the CLI:  --set data.root=/path/to/ptbxl data.sampling_rate=500
+# Every accuracy lever is a toggle here; defaults = the Narigina/Strodthoff-matching baseline.
 
 seed: 42
 
@@ -14,3 +15,27 @@ data:
   val_folds: [9]
   test_folds: [10]
   num_workers: 2
+
+  input:
+    mode: full               # full (10 s, Narigina default) | random_crop (Strodthoff fallback)
+    crop_seconds: 2.5        # used when mode=random_crop
+
+  normalization:
+    type: per_lead_zscore    # per_lead_zscore (train-fold stats) | per_record_zscore | none
+    eps: 1.0e-6              # added to std before dividing (flat-lead guard)
+
+  augment: []                # train-time transforms, e.g. [{name: ..., p: 0.5}]; see src/data/augment.py
+
+  sampler:
+    type: none               # none | hyp_oversample
+    factor: 2.0              # HYP-positive records drawn this many times as often
+
+train:
+  batch_size: 64
+
+eval:
+  window_agg:                # overlapping-window aggregation at eval time
+    enabled: auto            # auto = on iff data.input.mode == random_crop | true | false
+    window_seconds: 2.5
+    stride_seconds: 1.25
+    reduce: max              # max (Strodthoff) | mean
