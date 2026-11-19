@@ -8,8 +8,8 @@ Target: test-fold macro-AUC ≈ 0.928 (Strodthoff et al. baseline).
 > Status: milestones 1–5 built (data prep, Dataset/normalisation, model, training loop, test-fold
 > evaluation). The harness is validated; the B0 baseline itself is still to be run on a GPU. Scope: **Stream 1 only** (no interpretation layer yet).
 
-Goal: reproduce the baseline first (reference line), then **beat** it (macro-F1 0.754 / macro-AUC
-0.928) with raw-waveform-only improvements, each one a config toggle recorded as its own row in
+Goal: reproduce the baseline first (B0 vs Strodthoff: macro-F1 0.74 / macro-AUC 0.928), then **beat**
+Narigina's Stream-1 predictor (macro-F1 0.754) with raw-waveform-only improvements, each one a config toggle recorded as its own row in
 [`benchmarks.md`](benchmarks.md).
 
 ## Setup (any machine: Linux, macOS, Windows)
@@ -206,7 +206,10 @@ Protocol:
 3. **95% bootstrap CIs** (B = 1000, fixed seed, `eval.bootstrap`): test records are resampled with
    replacement and the thresholds stay fixed. The CIs therefore cover test-sampling variance of this
    one classifier, not run-to-run (seed) variance. Multi-seed rows add that separately.
-4. A comparison with the targets in `eval.targets` (macro-AUC 0.928, macro-F1 0.751 [0.740–0.767]).
+4. A comparison with that row's own reference in `eval.targets`. **B0** is compared with Strodthoff's
+   xresnet1d101 (macro-F1 0.74, macro-AUC 0.928). **A1** is compared with Narigina's Stream-1 predictor
+   (macro-F1 0.754). Other rows default to B0's reference; `--target` overrides it. The full twin's 0.751
+   (later phase) is a context line in `benchmarks.md`, never a Stream 1 target.
 5. The `--row` id is written or updated in `benchmarks.md` as `value [95% CI]` for macro-F1,
    macro-AUC and HYP-F1, with the run, epoch and date in the notes.
 

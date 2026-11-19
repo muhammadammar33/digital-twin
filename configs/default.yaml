@@ -79,10 +79,17 @@ train:
   limit_eval_batches: null   # debugging only
 
 eval:
-  targets:                   # Narigina et al. 2026 Stream 1 (reporting only; never used for selection)
-    macro_auc: 0.928
-    macro_f1: 0.751
-    macro_f1_ci: [0.740, 0.767]
+  targets:                   # per-row comparison references (reporting only; never used for selection)
+    B0:                      # pure xresnet1d101, attention off
+      label: Strodthoff et al. xresnet1d101 baseline
+      macro_auc: 0.928
+      macro_f1: 0.74
+    A1:                      # xresnet1d101 + cross-lead attention
+      label: Narigina et al. 2026 Stream-1 predictor (xresnet1d101 + cross-lead attention)
+      macro_auc: null        # not used as a target
+      macro_f1: 0.754
+    # The Narigina full twin (0.751 [0.740-0.767], with the fuzzy layer) is a later-phase reference
+    # listed in benchmarks.md only; it is deliberately NOT a Stream 1 target.
   bootstrap:
     n_boot: 1000
     seed: 0

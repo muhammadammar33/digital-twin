@@ -73,6 +73,8 @@ def main() -> None:
     ap.add_argument("--set", nargs="*", default=[], help=f"machine overrides only: {MACHINE_KEYS}")
     ap.add_argument("--row", default=None, help="benchmarks.md row id to write, e.g. B0 or A1")
     ap.add_argument("--vs", default="B0", help="'vs' cell for a new benchmark row")
+    ap.add_argument("--target", default=None,
+                    help="eval.targets key to compare against (default: --row if it has a target, else B0)")
     ap.add_argument("--notes", default="", help="extra text for the notes cell")
     ap.add_argument("--benchmarks", default="benchmarks.md")
     ap.add_argument("--plumbing-check", action="store_true",
@@ -92,7 +94,10 @@ def main() -> None:
     if args.set:
         cfg = load_config_from_dict(cfg, args.set)
     rep_cfg = load_config(args.config)
-    targets = rep_cfg.eval.targets
+    target_key = args.target or (args.row if args.row in rep_cfg.eval.targets else "B0")
+    if target_key not in rep_cfg.eval.targets:
+        sys.exit(f"--target {target_key!r} not in eval.targets ({list(rep_cfg.eval.targets)})")
+    targets = rep_cfg.eval.targets[target_key]
     bs_cfg = rep_cfg.eval.bootstrap
     classes = list(ck.get("classes") or cfg.data.classes)
 
@@ -139,7 +144,14 @@ def main() -> None:
 
     # ---------------------------------------------------------------- 4. report
     hyp = classes.index("HYP")
-    t_auc, t_f1 = float(targets.macro_auc), float(targets.macro_f1)
+
+    def target_row(name: str, value: float, run_ci, tgt, tgt_ci=None) -> str:
+        if tgt is None:
+            return f"| {name} | {fmt_ci(value, run_ci)} | n/a | | |"
+        tgt = float(tgt)
+        t = f"{tgt:.3f}" + (f" [{tgt_ci[0]:.3f}–{tgt_ci[1]:.3f}]" if tgt_ci else "")
+        inside = "yes" if run_ci[0] <= tgt <= run_ci[1] else "no"
+        return f"| {name} | {fmt_ci(value, run_ci)} | {t} | {value - tgt:+.3f} | {inside} |"
     lines = [
         f"# {banner}",
         "",
@@ -158,13 +170,13 @@ def main() -> None:
         "",
         f"## Headline (test fold, 95% bootstrap CI, B = {ci['n_boot']})",
         "",
-        "| metric | this run | target (Narigina et al.) | Δ | target inside CI? |",
+        f"target `{target_key}`: {targets.label}",
+        "",
+        "| metric | this run | target | Δ | target inside CI? |",
         "|---|---|---|---|---|",
-        f"| macro-AUC | {fmt_ci(test_m['macro_auc'], ci['macro_auc'])} | {t_auc:.3f} | "
-        f"{test_m['macro_auc'] - t_auc:+.3f} | {'yes' if ci['macro_auc'][0] <= t_auc <= ci['macro_auc'][1] else 'no'} |",
-        f"| macro-F1 (val thresholds) | {fmt_ci(test_m['macro_f1'], ci['macro_f1'])} | {t_f1:.3f} "
-        f"[{targets.macro_f1_ci[0]:.3f}–{targets.macro_f1_ci[1]:.3f}] | {test_m['macro_f1'] - t_f1:+.3f} | "
-        f"{'yes' if ci['macro_f1'][0] <= t_f1 <= ci['macro_f1'][1] else 'no'} |",
+        target_row("macro-AUC", test_m["macro_auc"], ci["macro_auc"], targets.get("macro_auc")),
+        target_row("macro-F1 (val thresholds)", test_m["macro_f1"], ci["macro_f1"],
+                   targets.get("macro_f1"), targets.get("macro_f1_ci")),
         f"| macro-F1 @ 0.5 (reference only) | {test_m['macro_f1_at_0.5']:.3f} | | | |",
         "",
         "## Per class (test fold)",
@@ -187,7 +199,7 @@ def main() -> None:
         "thresholds": frozen.tolist(), "threshold_source": source,
         "val_thresholds_rederived": val_thr_now.tolist(), "thresholds_consistent": consistent,
         "test": test_m, "val": val_m, "bootstrap": ci, "confusion": conf,
-        "targets": targets.to_dict(),
+        "target_key": target_key, "target": targets.to_dict(),
     }, indent=2))
     # saved predictions: the seam for multi-seed / multi-architecture ensembling
     np.savez_compressed(out_dir / "predictions.npz", val_probs=val["probs"], val_labels=val["labels"],
