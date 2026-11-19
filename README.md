@@ -150,11 +150,23 @@ about 12 min per epoch, so use a GPU for the full run.
 ### Running B0 on Kaggle
 
 1. Notebook settings: GPU on. Internet on as well, if you want the exact PhysioNet v1.0.3 download.
-2. In a cell, clone the repo and install the dependencies (Kaggle already has torch with CUDA):
+2. The repo is private, so cloning needs a token. Create a GitHub fine-grained token with read-only
+   *Contents* access to this repo only, and save it in Kaggle under *Add-ons → Secrets* as `GITHUB_TOKEN`.
+   Then, in a Python cell (Kaggle already has torch with CUDA, so only wfdb is installed):
 
-```bash
-git clone -b claude/serene-maxwell-2hehyp https://github.com/muhammadammar33/digital-twin.git && cd digital-twin && pip install -q wfdb
+```python
+from kaggle_secrets import UserSecretsClient; import subprocess, os
+tok = UserSecretsClient().get_secret("GITHUB_TOKEN")
+subprocess.run(["git", "clone", "-q", "-b", "claude/serene-maxwell-2hehyp",
+                f"https://x-access-token:{tok}@github.com/muhammadammar33/digital-twin.git"], check=True)
+os.chdir("digital-twin")
+# drop the token from .git/config: /kaggle/working is saved as notebook output
+subprocess.run(["git", "remote", "set-url", "origin",
+                "https://github.com/muhammadammar33/digital-twin.git"], check=True)
+subprocess.run(["pip", "install", "-q", "wfdb"], check=True)
 ```
+
+   Run the shell commands below from `/kaggle/working/digital-twin`, with a `!` prefix in a notebook cell.
 
 3. Point at the data. With internet on, run `python scripts/download_data.py` and leave out `--set`.
    With a Kaggle PTB-XL dataset attached, find its folder with `find /kaggle/input -name ptbxl_database.csv`
