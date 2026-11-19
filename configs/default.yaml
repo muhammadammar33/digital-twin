@@ -1,0 +1,16 @@
+# Stream 1 backbone (xresnet1d101 + cross-lead attention) on PTB-XL superdiagnostic.
+# Override any key from the CLI:  --set data.root=/path/to/ptbxl data.sampling_rate=500
+
+seed: 42
+
+data:
+  root: null                 # REQUIRED: folder containing ptbxl_database.csv, scp_statements.csv, records100/, records500/
+  cache_dir: artifacts/cache # derived tables / signal cache (relative to repo root unless absolute)
+  sampling_rate: 100         # 100 -> 12 x 1000, 500 -> 12 x 5000
+  task: superdiagnostic
+  classes: [NORM, MI, STTC, CD, HYP]
+  drop_unlabeled: true       # Strodthoff protocol: drop records with no superclass (needed to compare to 0.928)
+  train_folds: [1, 2, 3, 4, 5, 6, 7, 8]
+  val_folds: [9]
+  test_folds: [10]
+  num_workers: 2
