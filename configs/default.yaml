@@ -47,7 +47,36 @@ model:
   init_from: null            # path to pretrained backbone weights (self-supervised pretraining seam)
 
 train:
+  runs_dir: runs
+  device: auto               # auto (cuda > mps > cpu) | cuda | cpu | mps
+  amp: auto                  # auto = fp16 mixed precision on CUDA only
+  deterministic: true
+  epochs: 50
   batch_size: 64
+  loss:
+    type: bce                # bce (B0); asymmetric/focal added later as separate rows
+    pos_weight: null
+  optim:
+    lr: 2.0e-3               # peak LR (AdamW)
+    weight_decay: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+  sched:
+    warmup_epochs: 2         # linear warm-up, then cosine decay to lr * final_lr_frac
+    final_lr_frac: 0.01
+  grad_clip: null
+  early_stopping:
+    patience: 15             # epochs without val macro-F1 (threshold-optimised) improvement; null = off
+  ema:
+    enabled: false
+    decay: 0.999
+    evaluate: true           # validate / select / save best.pt with the EMA weights
+  swa:
+    enabled: false
+    start_epoch: 35          # average weights at the end of every epoch from here on
+  log_every: 50              # print running train loss every N steps (0 = off)
+  limit_train_batches: null  # debugging only
+  limit_eval_batches: null   # debugging only
 
 eval:
   window_agg:                # overlapping-window aggregation at eval time
