@@ -1,8 +1,9 @@
 __pycache__/
 *.pyc
-artifacts/
-runs/
+.venv/
+# generated / downloaded, anchored to the repo root (an unanchored "data/" would also hide src/data/)
+/data/
+/artifacts/
+/runs/
 *.npy
 *.pt
-.venv/
-data/
