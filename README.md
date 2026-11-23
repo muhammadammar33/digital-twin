@@ -5,8 +5,8 @@ Cardiac Disease Recognition* (Appl. Sci. 2026): the accurate ECG classifier back
 (xresnet1d101 + cross-lead attention → 512-d embedding → 5 superclass logits) on PTB-XL.
 Target: test-fold macro-AUC ≈ 0.928 (Strodthoff et al. baseline).
 
-> Status: milestones 1–5 built (data prep, Dataset/normalisation, model, training loop, test-fold
-> evaluation). The harness is validated; the B0 baseline itself is still to be run on a GPU. Scope: **Stream 1 only** (no interpretation layer yet).
+> Status: milestones 1–5 done. **B0 reproduced** the Strodthoff baseline (test macro-AUC 0.921
+> [0.914–0.929], macro-F1 0.734 [0.718–0.750]; both targets inside the CI). Next: A1 (cross-lead attention). Scope: **Stream 1 only** (no interpretation layer yet).
 
 Goal: reproduce the baseline first (B0 vs Strodthoff: macro-F1 0.74 / macro-AUC 0.928), then **beat**
 Narigina's Stream-1 predictor (macro-F1 0.754) with raw-waveform-only improvements, each one a config toggle recorded as its own row in
@@ -224,6 +224,37 @@ On Kaggle, run it right after training (it needs the cache built by `prepare_dat
 ```bash
 python scripts/train.py --run-name b0 && python scripts/evaluate.py --run-name b0 --row B0
 ```
+
+## 6. Improvement rows (one change vs B0)
+
+Each row changes exactly one thing relative to B0 and is evaluated against B0 with a **paired
+bootstrap** on the same 2,158 test records (`--vs-run b0`). The paired bootstrap resamples the
+records jointly for both models and reports Δ (this − B0) with a 95% CI and P(Δ ≤ 0). If B0's
+`runs/b0/eval_best/predictions.npz` is not present, the script falls back to an unpaired Δ from the
+B0 row in `benchmarks.md` and labels it as unpaired.
+
+A1, cross-lead attention (lead variant):
+
+```bash
+python scripts/train.py --run-name a1_lead --set model.attention.type=lead && python scripts/evaluate.py --run-name a1_lead --row A1 --vs B0 --vs-run b0
+```
+
+Resume an interrupted A1 run. Its saved config already has `attention.type=lead`:
+
+```bash
+python scripts/train.py --run-name a1_lead --resume
+```
+
+On Kaggle in a new session, attach the B0 notebook's output as input, so you can reuse its signal
+cache and its B0 predictions instead of rebuilding:
+
+```bash
+B0=/kaggle/input/<b0-notebook-output>/digital-twin; mkdir -p artifacts runs/b0 && cp -r $B0/artifacts/cache artifacts/ && cp -r $B0/runs/b0/eval_best runs/b0/
+```
+
+The Δ CI covers test-sampling variance only. Seed-to-seed variance of a single training run can be
+of similar size (≈0.01 macro-F1), so a small Δ should be confirmed with a second seed
+(`--set seed=43` for both B0 and the variant) before claiming a gain.
 
 ## Accuracy roadmap: where each lever plugs in
 

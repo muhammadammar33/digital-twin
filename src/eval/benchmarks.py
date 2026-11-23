@@ -48,3 +48,16 @@ def write_row(path: Path, row_id: str, macro_f1: str, macro_auc: str, hyp_f1: st
     out = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
     path.write_text(out)
     return next(l for l in lines if l.startswith(f"| {row_id} |"))
+
+
+def read_row_values(path: Path, row_id: str) -> dict | None:
+    """Point values (number before the CI) of a row's macro-F1 / macro-AUC / HYP-F1 cells."""
+    for line in Path(path).read_text().splitlines():
+        cells = _cells(line) if line.lstrip().startswith("|") else []
+        if cells and cells[0] == row_id and len(cells) >= 6:
+            def num(c):
+                m = re.match(r"\s*([0-9]*\.[0-9]+)", c)
+                return float(m.group(1)) if m else None
+            vals = {"macro_f1": num(cells[3]), "macro_auc": num(cells[4]), "hyp_f1": num(cells[5])}
+            return vals if any(v is not None for v in vals.values()) else None
+    return None

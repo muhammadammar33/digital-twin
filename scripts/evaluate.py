@@ -28,8 +28,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.data.dataset import build_dataloaders  # noqa: E402
-from src.eval.benchmarks import write_row  # noqa: E402
-from src.eval.bootstrap import bootstrap_ci  # noqa: E402
+from src.eval.benchmarks import read_row_values, write_row  # noqa: E402
+from src.eval.bootstrap import bootstrap_ci, paired_delta  # noqa: E402
 from src.eval.confusion import format_confusion, per_class_confusion  # noqa: E402
 from src.eval.metrics import find_thresholds, summarize  # noqa: E402
 from src.eval.predict import predict, window_agg_enabled  # noqa: E402
@@ -73,6 +73,9 @@ def main() -> None:
     ap.add_argument("--set", nargs="*", default=[], help=f"machine overrides only: {MACHINE_KEYS}")
     ap.add_argument("--row", default=None, help="benchmarks.md row id to write, e.g. B0 or A1")
     ap.add_argument("--vs", default="B0", help="'vs' cell for a new benchmark row")
+    ap.add_argument("--vs-run", default=None,
+                    help="run name of the --vs row (e.g. b0): its eval_best/predictions.npz enables a PAIRED "
+                         "bootstrap delta; without it the delta is unpaired, from the benchmarks.md values")
     ap.add_argument("--target", default=None,
                     help="eval.targets key to compare against (default: --row if it has a target, else B0)")
     ap.add_argument("--notes", default="", help="extra text for the notes cell")
@@ -140,10 +143,37 @@ def main() -> None:
 
     # ---------------------------------------------------------------- 3. bootstrap CIs
     ci = bootstrap_ci(test["labels"], test["probs"], frozen, n_boot=int(bs_cfg.n_boot), seed=int(bs_cfg.seed))
+    hyp = classes.index("HYP")
+
+    # ---------------------------------------------------------------- 3b. delta vs the reference row
+    cmp = None
+    if args.row and args.row != "B0" and args.vs:
+        ref_npz = resolve_path(args.runs_dir) / args.vs_run / "eval_best" / "predictions.npz" if args.vs_run else None
+        if ref_npz is not None and ref_npz.exists():
+            r = np.load(ref_npz, allow_pickle=False)
+            order = {int(i): j for j, i in enumerate(r["test_ids"])}
+            if set(order) != set(int(i) for i in test["ecg_ids"]):
+                sys.exit(f"{ref_npz}: test records differ from this run's test fold; cannot pair")
+            idx = np.array([order[int(i)] for i in test["ecg_ids"]])
+            if not np.array_equal(r["test_labels"][idx], test["labels"]):
+                sys.exit(f"{ref_npz}: test labels differ; cannot pair")
+            cmp = {"kind": "paired", "vs": args.vs, "vs_run": args.vs_run,
+                   **paired_delta(test["labels"], test["probs"], frozen, r["test_probs"][idx], r["thresholds"],
+                                  hyp, n_boot=int(bs_cfg.n_boot), seed=int(bs_cfg.seed))}
+        else:
+            if args.vs_run:
+                print(f"WARNING: {ref_npz} not found; falling back to an UNPAIRED delta from benchmarks.md")
+            ref_vals = read_row_values(resolve_path(args.benchmarks), args.vs)
+            if ref_vals:
+                cur = {"macro_f1": test_m["macro_f1"], "macro_auc": test_m["macro_auc"],
+                       "hyp_f1": test_m[f"f1_{classes[hyp]}"]}
+                cmp = {"kind": "unpaired", "vs": args.vs,
+                       **{k: {"delta": cur[k] - v} for k, v in ref_vals.items() if v is not None}}
+            else:
+                print(f"WARNING: no '{args.vs}' row with values in {args.benchmarks}; no delta computed")
     secs = time.time() - t0
 
     # ---------------------------------------------------------------- 4. report
-    hyp = classes.index("HYP")
 
     def target_row(name: str, value: float, run_ci, tgt, tgt_ci=None) -> str:
         if tgt is None:
@@ -192,6 +222,18 @@ def main() -> None:
     lines += ["", "## Confusion matrices (one-vs-rest, test fold, frozen thresholds)", "", "```",
               format_confusion(conf), "```", "",
               f"validation (frozen thresholds): macro-AUC {val_m['macro_auc']:.4f}, macro-F1 {val_m['macro_f1']:.4f}", ""]
+    if cmp:
+        lines += [f"## Δ vs {cmp['vs']} ({cmp['kind']}"
+                  + (f" bootstrap on the same {len(test['labels'])} test records, run `{cmp['vs_run']}`)"
+                     if cmp["kind"] == "paired" else ", from benchmarks.md point values; no CI)"), "",
+                  "| metric | Δ (this − ref) | 95% CI | P(Δ ≤ 0) |", "|---|---|---|---|"]
+        for k, name in (("macro_f1", "macro-F1"), ("macro_auc", "macro-AUC"), ("hyp_f1", "HYP-F1")):
+            if k in cmp:
+                c = cmp[k]
+                lines.append(f"| {name} | {c['delta']:+.3f} | "
+                             + (f"[{c['ci'][0]:+.3f}, {c['ci'][1]:+.3f}] | {c['p_delta_le_0']:.3f} |"
+                                if "ci" in c else "n/a | n/a |"))
+        lines.append("")
     report = "\n".join(lines)
     (out_dir / "report.md").write_text(report)
     (out_dir / "metrics.json").write_text(json.dumps({
@@ -199,7 +241,7 @@ def main() -> None:
         "thresholds": frozen.tolist(), "threshold_source": source,
         "val_thresholds_rederived": val_thr_now.tolist(), "thresholds_consistent": consistent,
         "test": test_m, "val": val_m, "bootstrap": ci, "confusion": conf,
-        "target_key": target_key, "target": targets.to_dict(),
+        "target_key": target_key, "target": targets.to_dict(), "delta_vs": cmp,
     }, indent=2))
     # saved predictions: the seam for multi-seed / multi-architecture ensembling
     np.savez_compressed(out_dir / "predictions.npz", val_probs=val["probs"], val_labels=val["labels"],
@@ -218,10 +260,20 @@ def main() -> None:
         notes = (f"run `{args.run_name}` {args.checkpoint}.pt ep {ck.get('epoch', '?')}; test N={len(test['labels'])}; "
                  f"95% bootstrap CI (B={ci['n_boot']}); val thresholds frozen; {time.strftime('%Y-%m-%d')}"
                  + (f"; {args.notes}" if args.notes else ""))
+        def cell(value: str, key: str) -> str:
+            if not cmp or key not in cmp:
+                return value
+            c = cmp[key]
+            if "ci" in c:
+                return f"{value}; Δ {c['delta']:+.3f} [{c['ci'][0]:+.3f}, {c['ci'][1]:+.3f}]"
+            return f"{value}; Δ {c['delta']:+.3f} (unpaired)"
+        if cmp:
+            notes += (f"; Δ vs {cmp['vs']}: {cmp['kind']} bootstrap" if cmp["kind"] == "paired"
+                      else f"; Δ vs {cmp['vs']}: unpaired point difference")
         row = write_row(bench, args.row,
-                        macro_f1=fmt_ci(test_m["macro_f1"], ci["macro_f1"]),
-                        macro_auc=fmt_ci(test_m["macro_auc"], ci["macro_auc"]),
-                        hyp_f1=fmt_ci(test_m[f"f1_{classes[hyp]}"], ci["per_class_f1"][hyp]),
+                        macro_f1=cell(fmt_ci(test_m["macro_f1"], ci["macro_f1"]), "macro_f1"),
+                        macro_auc=cell(fmt_ci(test_m["macro_auc"], ci["macro_auc"]), "macro_auc"),
+                        hyp_f1=cell(fmt_ci(test_m[f"f1_{classes[hyp]}"], ci["per_class_f1"][hyp]), "hyp_f1"),
                         notes=notes,
                         config="`configs/default.yaml`" + (" " + " ".join(f"`{d}`" for d in diff) if diff else ""),
                         vs=args.vs if args.row != "B0" else "")
