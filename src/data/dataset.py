@@ -47,6 +47,7 @@ class PTBXLDataset(Dataset):
         self.augment = augment if train else None
         self._X = None
         self._rng = None
+        self._epoch_seed = None
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -56,8 +57,20 @@ class PTBXLDataset(Dataset):
             self._X = np.load(self.signals_path, mmap_mode="r")
         if self._rng is None:
             info = torch.utils.data.get_worker_info()
-            # seeded from the DataLoader's seeded generator -> reproducible crops/augmentations
-            self._rng = np.random.default_rng(info.seed if info else torch.initial_seed())
+            # workers: seeded from the DataLoader's (seed, epoch)-seeded generator; main process:
+            # from set_epoch(). Either way crops/augmentations are reproducible and resume-exact.
+            if info is not None:
+                seed = info.seed
+            elif self._epoch_seed is not None:
+                seed = self._epoch_seed
+            else:
+                seed = torch.initial_seed()
+            self._rng = np.random.default_rng(seed)
+
+    def set_epoch(self, seed: int) -> None:
+        """Reset the per-epoch RNG (used when num_workers=0; workers are re-seeded per epoch anyway)."""
+        self._epoch_seed = int(seed)
+        self._rng = None
 
     def __getitem__(self, i: int) -> dict:
         self._lazy_init()
@@ -115,7 +128,7 @@ def build_datasets(cfg: Config) -> dict:
     crop_len = int(round(d.input.crop_seconds * fs)) if d.input.mode == "random_crop" else None
     if d.input.mode not in ("full", "random_crop"):
         raise ValueError(f"unknown data.input.mode {d.input.mode!r}")
-    augment = Compose(d.get("augment"))
+    augment = Compose(d.get("augment"), fs=fs)
 
     ds = {s: PTBXLDataset(p["signals"], r, y[r], table.index.values[r], normalizer,
                           train=(s == "train"), crop_len=crop_len, augment=augment)

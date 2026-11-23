@@ -233,11 +233,27 @@ records jointly for both models and reports Δ (this − B0) with a 95% CI and P
 `runs/b0/eval_best/predictions.npz` is not present, the script falls back to an unpaired Δ from the
 B0 row in `benchmarks.md` and labels it as unpaired.
 
+`--vs` and `--vs-run` take lists, paired by position (`--vs B0 A1 --vs-run b0 a1_lead`). Each reference
+gets its own paired Δ in the report and in the row cells (`ΔB0 …; ΔA1 …`).
+
 A1, cross-lead attention (lead variant):
 
 ```bash
 python scripts/train.py --run-name a1_lead --set model.attention.type=lead && python scripts/evaluate.py --run-name a1_lead --row A1 --vs B0 --vs-run b0
 ```
+
+A2 = A1 + augmentation (`configs/a2_aug.yaml`), compared against both B0 and A1:
+
+```bash
+python scripts/train.py --config configs/a2_aug.yaml --run-name a2_aug && python scripts/evaluate.py --run-name a2_aug --row A2 --vs B0 A1 --vs-run b0 a1_lead
+```
+
+Augmentation (`data.augment`, `data.mixup`; off in B0/A1; checks: `python scripts/check_augment.py`):
+time shift, baseline wander (<1 Hz sinusoids), Gaussian noise, amplitude scaling, lead dropout, and
+batch-level mixup. They are applied after z-scoring, to training batches only. Each transform has a
+probability `p` and can be switched off with `enabled: false` (for example
+`--set data.mixup.enabled=false`) for ablation rows. Default strengths are common ECG choices, not
+values from the paper.
 
 Resume an interrupted A1 run. Its saved config already has `attention.type=lead`:
 
@@ -270,7 +286,8 @@ Defaults are the baseline. Every lever is off by default and is enabled from the
 | Cross-lead / temporal attention | `model.attention.type` | `src/models/attention.py` | done (M3); first benchmark row vs B0 |
 | 2.5 s random crops (Strodthoff fallback) | `data.input.mode: random_crop` | `src/data/windows.py` | done (M2) |
 | Overlapping-window aggregation at eval | `eval.window_agg` | `src/eval/predict.py` | done (M4); auto-on with crops |
-| Train-time augmentation / TTA | `data.augment`, `eval.tta` | `src/data/augment.py` registry | seam only (empty) |
+| Train-time augmentation (shift, wander, noise, scale, lead dropout, mixup) | `data.augment`, `data.mixup` (`configs/a2_aug.yaml`) | `src/data/augment.py` | done; row A2 |
+| Test-time augmentation | `eval.tta` | `src/eval/predict.py` | seam only |
 | HYP oversampling | `data.sampler.type: hyp_oversample` | `src/data/dataset.py` | done (M2) |
 | Asymmetric + focal loss | `train.loss.type` | `src/train/loss.py` registry | seam (bce only so far) |
 | EMA / SWA | `train.ema.enabled`, `train.swa.enabled` | `src/train/averaging.py` | done (M4) |
@@ -290,6 +307,6 @@ src/data/       label mapping, splits, signal cache, Dataset, normalisation, cro
 src/models/     xresnet1d101 backbone, cross-lead attention, head
 src/train/      training loop, losses, optimiser/schedule, EMA/SWA
 src/eval/       metrics, val-threshold search, bootstrap CIs, confusion matrices, predictor, benchmarks writer
-scripts/        download_data.py, prepare_data.py, check_data.py, check_model.py, train.py, evaluate.py
+scripts/        download_data.py, prepare_data.py, check_data.py, check_model.py, check_augment.py, train.py, evaluate.py
 benchmarks.md   running results table (one change per row)
 ```

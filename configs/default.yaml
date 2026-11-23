@@ -24,7 +24,11 @@ data:
     type: per_lead_zscore    # per_lead_zscore (train-fold stats) | per_record_zscore | none
     eps: 1.0e-6              # added to std before dividing (flat-lead guard)
 
-  augment: []                # train-time transforms, e.g. [{name: ..., p: 0.5}]; see src/data/augment.py
+  augment: []                # train-time transforms (off in B0/A1); see configs/a2_aug.yaml and src/data/augment.py
+  mixup:
+    enabled: false
+    alpha: 0.2               # Beta(alpha, alpha)
+    p: 0.5                   # fraction of batches mixed
 
   sampler:
     type: none               # none | hyp_oversample

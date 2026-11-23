@@ -24,6 +24,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from src.data.augment import mixup_batch
 from src.eval.metrics import summarize
 from src.eval.predict import predict
 from src.train.averaging import build_ema, build_swa, swa_update_bn
@@ -127,6 +128,10 @@ class Trainer:
         self.model.train()
         # reseed the shuffle/sampler/worker RNG from (seed, epoch): identical order after --resume
         self.loaders["train"].generator.manual_seed(int(self.cfg.seed) + self.epoch)
+        self.loaders["train"].dataset.set_epoch(int(self.cfg.seed) * 100003 + self.epoch)
+        mix = self.cfg.data.get("mixup") or {}
+        mix_on = bool(mix.get("enabled", False))
+        mix_rng = np.random.default_rng([int(self.cfg.seed), self.epoch, 7])   # resume-exact
         loss_sum, n = 0.0, 0
         clip = self.cfg.train.get("grad_clip")
         t0 = time.time()
@@ -135,6 +140,8 @@ class Trainer:
                 break
             x = b["x"].to(self.device, non_blocking=True)
             y = b["y"].to(self.device, non_blocking=True)
+            if mix_on:
+                x, y = mixup_batch(x, y, float(mix.get("alpha", 0.2)), float(mix.get("p", 0.5)), mix_rng)
             with torch.autocast(self.device.type, dtype=self.amp_dtype, enabled=self.amp_dtype is not None):
                 logits = self.model(x).logits
             loss = self.loss_fn(logits.float(), y)

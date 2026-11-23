@@ -1,0 +1,25 @@
+# A2 = A1 (cross-lead attention) + the augmentation suite, aimed at the epoch-6 overfitting of B0/A1.
+#   python scripts/train.py --config configs/a2_aug.yaml --run-name a2_aug
+# Every transform can be switched off individually (enabled: false) for ablation rows.
+base: default.yaml
+
+model:
+  attention:
+    type: lead
+
+data:
+  augment:
+    - {name: time_shift,      p: 0.5, max_shift_s: 1.0, mode: roll}
+    - {name: baseline_wander, p: 0.3, max_amplitude: 0.3, freq_hz: [0.05, 0.5], n_components: 2}
+    - {name: gaussian_noise,  p: 0.3, sigma_min: 0.01, sigma_max: 0.05}
+    - {name: amplitude_scale, p: 0.5, min_scale: 0.8, max_scale: 1.2, per_lead: true}
+    - {name: lead_dropout,    p: 0.2, p_lead: 0.1, max_leads: 3}
+  mixup:
+    enabled: true
+    alpha: 0.2
+    p: 0.5
+
+train:
+  # Augmented training converges later; give it room. B0/A1 stopped ~15 epochs after their epoch-6 peak.
+  early_stopping:
+    patience: 25
