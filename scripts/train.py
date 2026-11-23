@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.data.dataset import build_dataloaders  # noqa: E402
 from src.models.model import build_model, count_params  # noqa: E402
 from src.train.loop import Trainer, pick_device  # noqa: E402
-from src.utils.config import Config, load_config, resolve_path, seed_everything  # noqa: E402
+from src.utils.config import Config, load_config, git_commit, resolve_path, sdpa_backends, seed_everything  # noqa: E402
 
 RESUME_SAFE = ("data.root", "data.cache_dir", "data.num_workers", "train.device", "train.log_every")
 
@@ -111,9 +111,11 @@ def main() -> None:
     data = build_dataloaders(cfg)
     model = build_model(cfg)
     trainer = Trainer(cfg, model, data["loaders"], data["classes"], run_dir, log=log)
+    log(f"code commit {git_commit()}")
     log(f"run {run_dir}  device {trainer.device}  amp {trainer.amp_dtype}  "
         f"params {count_params(model) / 1e6:.2f}M  steps/epoch {trainer.steps_per_epoch}  "
-        f"attention {cfg.model.attention.type}  fs {cfg.data.sampling_rate} Hz  input {cfg.data.input.mode}")
+        f"attention {cfg.model.attention.type}  fs {cfg.data.sampling_rate} Hz  input {cfg.data.input.mode}  "
+        f"deterministic {cfg.train.get('deterministic', True)} (attention kernels: {sdpa_backends()})")
     if args.resume:
         trainer.resume(run_dir / "last.pt")
     res = trainer.fit(stop_after=args.stop_after)

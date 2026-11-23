@@ -35,7 +35,7 @@ from src.eval.metrics import find_thresholds, summarize  # noqa: E402
 from src.eval.predict import predict, window_agg_enabled  # noqa: E402
 from src.models.model import build_model  # noqa: E402
 from src.train.loop import pick_device  # noqa: E402
-from src.utils.config import REPO_ROOT, Config, load_config, resolve_path, seed_everything  # noqa: E402
+from src.utils.config import REPO_ROOT, Config, git_commit, load_config, resolve_path, seed_everything  # noqa: E402
 
 MACHINE_KEYS = ("data.root", "data.cache_dir", "data.num_workers", "train.device")
 
@@ -188,7 +188,8 @@ def main() -> None:
         f"run `{args.run_name}` · checkpoint `{args.checkpoint}.pt` (epoch {ck.get('epoch', '?')}, "
         f"weights: {ck.get('weights', 'raw')}) · {cfg.data.sampling_rate} Hz · input {cfg.data.input.mode}"
         f"{' + window aggregation' if window_agg_enabled(cfg) else ''} · attention {cfg.model.attention.type}",
-        f"test fold N = {len(test['labels'])} · val fold N = {len(val['labels'])} · {secs:.0f}s on {device}",
+        f"test fold N = {len(test['labels'])} · val fold N = {len(val['labels'])} · {secs:.0f}s on {device} · "
+        f"code {git_commit()}",
         "",
         "## Thresholds (validation fold, frozen before test)",
         "",

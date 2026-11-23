@@ -252,6 +252,11 @@ cache and its B0 predictions instead of rebuilding:
 B0=/kaggle/input/<b0-notebook-output>/digital-twin; mkdir -p artifacts runs/b0 && cp -r $B0/artifacts/cache artifacts/ && cp -r $B0/runs/b0/eval_best runs/b0/
 ```
 
+Reproducibility: with `train.deterministic: true` (default), CUDA attention uses the deterministic
+"math" kernel, so A1/A1b reruns with the same seed on the same GPU, driver and torch version are
+bit-identical. The train log prints the attention kernels in use and the code commit, and the eval
+report prints the commit too. Check it matches the branch head before trusting a run.
+
 The Δ CI covers test-sampling variance only. Seed-to-seed variance of a single training run can be
 of similar size (≈0.01 macro-F1), so a small Δ should be confirmed with a second seed
 (`--set seed=43` for both B0 and the variant) before claiming a gain.

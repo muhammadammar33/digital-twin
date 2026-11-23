@@ -101,3 +101,32 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
         torch.backends.cudnn.benchmark = False
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
         torch.use_deterministic_algorithms(True, warn_only=True)
+        # Fused scaled-dot-product attention kernels (flash / memory-efficient / cuDNN) have
+        # non-deterministic backward passes on CUDA. Force the plain "math" kernel so runs with
+        # attention (A1/A1b) are bit-reproducible too. No effect on CPU or on attention-free B0.
+        for name in ("enable_flash_sdp", "enable_mem_efficient_sdp", "enable_cudnn_sdp"):
+            if hasattr(torch.backends.cuda, name):
+                getattr(torch.backends.cuda, name)(False)
+        torch.backends.cuda.enable_math_sdp(True)
+
+
+def sdpa_backends() -> str:
+    """Which CUDA attention kernels are enabled (for the run log)."""
+    import torch
+    names = {"flash": "flash_sdp_enabled", "mem_efficient": "mem_efficient_sdp_enabled",
+             "cudnn": "cudnn_sdp_enabled", "math": "math_sdp_enabled"}
+    on = [k for k, f in names.items() if hasattr(torch.backends.cuda, f) and getattr(torch.backends.cuda, f)()]
+    return ",".join(on) or "none"
+
+
+def git_commit() -> str:
+    """Short commit hash of the code being run (+ '-dirty' if there are local edits), or 'unknown'."""
+    import subprocess
+    try:
+        h = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True, timeout=5).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--untracked-files=no"],
+                               capture_output=True, text=True, timeout=5).stdout.strip()
+        return (h + ("-dirty" if dirty else "")) if h else "unknown"
+    except Exception:
+        return "unknown"
