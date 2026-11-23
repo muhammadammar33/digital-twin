@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.data.dataset import build_dataloaders  # noqa: E402
 from src.models.model import build_model, count_params  # noqa: E402
 from src.train.loop import Trainer, pick_device  # noqa: E402
-from src.utils.config import Config, load_config, git_commit, resolve_path, sdpa_backends, seed_everything  # noqa: E402
+from src.utils.config import load_config, git_commit, resolve_path, sdpa_backends, seed_everything  # noqa: E402
 
 RESUME_SAFE = ("data.root", "data.cache_dir", "data.num_workers", "train.device", "train.log_every")
 
@@ -71,6 +71,9 @@ def overfit_batch(cfg, steps: int, batch_size: int) -> None:
     sys.exit(0 if ok else 1)
 
 
+T_START = time.time()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/default.yaml")
@@ -78,6 +81,8 @@ def main() -> None:
     ap.add_argument("--run-name", default=None, help="run directory name under train.runs_dir")
     ap.add_argument("--resume", action="store_true", help="continue runs/<run-name> from last.pt")
     ap.add_argument("--stop-after", type=int, default=None, help="stop after N epochs this session")
+    ap.add_argument("--time-limit-min", type=float, default=None,
+                    help="wall-clock budget for this session; stops cleanly between epochs (exit code 3 = unfinished)")
     ap.add_argument("--overfit-batch", action="store_true", help="single-batch overfit test")
     ap.add_argument("--overfit-steps", type=int, default=150)
     ap.add_argument("--overfit-bs", type=int, default=16)
@@ -118,9 +123,11 @@ def main() -> None:
         f"deterministic {cfg.train.get('deterministic', True)} (attention kernels: {sdpa_backends()})")
     if args.resume:
         trainer.resume(run_dir / "last.pt")
-    res = trainer.fit(stop_after=args.stop_after)
+    deadline = T_START + 60 * args.time_limit_min if args.time_limit_min else None
+    res = trainer.fit(stop_after=args.stop_after, deadline=deadline)
     log(f"done: {res['epochs_done']} epochs, best val macro-F1 {res['best']['metric']:.4f} "
         f"at epoch {res['best']['epoch']}" + ("" if res["finished"] else " (unfinished: use --resume)"))
+    sys.exit(0 if res["finished"] else 3)
 
 
 if __name__ == "__main__":

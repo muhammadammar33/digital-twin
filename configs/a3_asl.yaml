@@ -1,0 +1,9 @@
+# A3 = A2 (lead attention + augmentation) + asymmetric loss (aimed at HYP-F1). One change vs A2.
+#   python scripts/train.py --config configs/a3_asl.yaml --run-name a3_asl
+# No oversampling (data.sampler stays 'none': HYP oversampling hurt in S1).
+base: a2_aug.yaml
+
+train:
+  loss:
+    type: asl
+    asl: {gamma_pos: 0.0, gamma_neg: 4.0, clip: 0.05}   # Ridnik et al. 2021 recommended setting

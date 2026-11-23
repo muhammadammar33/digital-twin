@@ -178,7 +178,10 @@ class Trainer:
         return m
 
     # ------------------------------------------------------------------ fit
-    def fit(self, stop_after: int | None = None) -> dict:
+    def fit(self, stop_after: int | None = None, deadline: float | None = None) -> dict:
+        """deadline: wall-clock time.time() by which this session must stop. The loop stops BETWEEN
+        epochs when the next epoch (estimated from the slowest epoch so far, +10%) would overrun it;
+        last.pt is always complete, so --resume continues exactly."""
         tc = self.cfg.train
         epochs = int(tc.epochs)
         patience = tc.early_stopping.get("patience")
@@ -191,6 +194,12 @@ class Trainer:
             if stop_after is not None and ran >= stop_after:
                 self.log(f"stopping after {ran} epoch(s) this session (--stop-after); resume with --resume")
                 break
+            if deadline is not None:
+                est = 1.1 * max([h["seconds"] for h in self.history] or [0.0])
+                if time.time() + est > deadline:
+                    self.log(f"time budget: next epoch (~{est / 60:.1f} min) would exceed the session limit; "
+                             f"stopping after epoch {self.epoch}. Resume with --resume")
+                    break
             t0 = time.time()
             lr = self.sched.get_last_lr()[0]
             train_loss = self.train_one_epoch()

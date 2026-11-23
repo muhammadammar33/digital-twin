@@ -58,8 +58,11 @@ train:
   epochs: 50
   batch_size: 64
   loss:
-    type: bce                # bce (B0); asymmetric/focal added later as separate rows
-    pos_weight: null
+    type: bce                # bce (B0/A1/A2) | asl (asymmetric, configs/a3_asl.yaml) | focal
+    pos_weight: null         # bce only: per-class positive weight list
+    class_weights: null      # asl/focal: per-class loss weight list, e.g. [1, 1, 1, 1, 2] up-weights HYP
+    asl: {gamma_pos: 0.0, gamma_neg: 4.0, clip: 0.05}
+    focal: {gamma: 2.0, alpha: null}
   optim:
     lr: 2.0e-3               # peak LR (AdamW)
     weight_decay: 1.0e-4

@@ -268,6 +268,32 @@ cache and its B0 predictions instead of rebuilding:
 B0=/kaggle/input/<b0-notebook-output>/digital-twin; mkdir -p artifacts runs/b0 && cp -r $B0/artifacts/cache artifacts/ && cp -r $B0/runs/b0/eval_best runs/b0/
 ```
 
+A3 = A2 + asymmetric loss (`configs/a3_asl.yaml`; `train.loss.type`: `bce` | `asl` | `focal`, with
+optional per-class `class_weights`; checks: `python scripts/check_loss.py`):
+
+```bash
+python scripts/train.py --config configs/a3_asl.yaml --run-name a3_asl && python scripts/evaluate.py --run-name a3_asl --row A3 --vs A2 B0 --vs-run a2_aug b0
+```
+
+### Multi-seed ensemble (E1)
+
+`scripts/run_seeds.py` trains and evaluates one config at several seeds, then runs `scripts/ensemble.py`.
+It is **resumable across sessions**. Re-run the same command with `runs/` carried over: finished seeds
+are skipped, a partially trained seed resumes from `last.pt`, and training stops cleanly between epochs
+before `--time-limit-min` runs out (exit code 3 = "continue next session"). `--reuse 42=a2_aug` uses the
+existing A2 run as the seed-42 member.
+
+```bash
+python scripts/run_seeds.py --config configs/a2_aug.yaml --prefix a2 --seeds 42 1337 2024 7 314 --reuse 42=a2_aug --time-limit-min 690 --ensemble-name a2_ens5 --row E1 --vs B0 A1 A2 --vs-run b0 a1_lead a2_aug
+```
+
+The ensemble averages the members' saved val/test probabilities (`--average prob`, or `logit`). It
+re-tunes the per-class thresholds on the **ensemble's validation** probabilities and freezes them
+before the test metrics. Then it reports exactly like a single run (shared code in `src/eval/report.py`):
+bootstrap CIs, a paired Δ vs each `--vs-run`, and the `benchmarks.md` row. The ensemble's own
+`predictions.npz` goes to `runs/a2_ens5/eval_best/`, so it can be a later `--vs-run` reference. Member
+configs must differ only in the seed; `--allow-mixed` allows multi-architecture ensembles.
+
 Reproducibility: with `train.deterministic: true` (default), CUDA attention uses the deterministic
 "math" kernel, so A1/A1b reruns with the same seed on the same GPU, driver and torch version are
 bit-identical. The train log prints the attention kernels in use and the code commit, and the eval
@@ -289,9 +315,9 @@ Defaults are the baseline. Every lever is off by default and is enabled from the
 | Train-time augmentation (shift, wander, noise, scale, lead dropout, mixup) | `data.augment`, `data.mixup` (`configs/a2_aug.yaml`) | `src/data/augment.py` | done; row A2 |
 | Test-time augmentation | `eval.tta` | `src/eval/predict.py` | seam only |
 | HYP oversampling | `data.sampler.type: hyp_oversample` | `src/data/dataset.py` | done (M2) |
-| Asymmetric + focal loss | `train.loss.type` | `src/train/loss.py` registry | seam (bce only so far) |
+| Asymmetric + focal loss (+ per-class weights) | `train.loss.type: asl\|focal` (`configs/a3_asl.yaml`) | `src/train/loss.py` | done; row A3 |
 | EMA / SWA | `train.ema.enabled`, `train.swa.enabled` | `src/train/averaging.py` | done (M4) |
-| Multi-seed / multi-architecture ensembles | `ensemble` (list of run dirs); `model.backbone.name` (xresnet1d18…152) | `scripts/evaluate.py` averages saved probabilities | after M5 |
+| Multi-seed / multi-architecture ensembles | `scripts/run_seeds.py`, `scripts/ensemble.py --allow-mixed`; `model.backbone.name` | `scripts/ensemble.py` | done; row E1 |
 | Self-supervised pretraining (masked / contrastive) | `model.init_from` (backbone checkpoint) | loader done (`load_encoder_weights`); pretrain script after M5 | seam ready |
 | 500 Hz input | `data.sampling_rate: 500` | everywhere | supported |
 
@@ -307,6 +333,6 @@ src/data/       label mapping, splits, signal cache, Dataset, normalisation, cro
 src/models/     xresnet1d101 backbone, cross-lead attention, head
 src/train/      training loop, losses, optimiser/schedule, EMA/SWA
 src/eval/       metrics, val-threshold search, bootstrap CIs, confusion matrices, predictor, benchmarks writer
-scripts/        download_data.py, prepare_data.py, check_data.py, check_model.py, check_augment.py, train.py, evaluate.py
+scripts/        download_data.py, prepare_data.py, check_*.py, train.py, evaluate.py, ensemble.py, run_seeds.py
 benchmarks.md   running results table (one change per row)
 ```
